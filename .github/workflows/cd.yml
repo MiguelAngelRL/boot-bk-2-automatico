@@ -6,8 +6,11 @@ on:
       - master
 
 env:
-  HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
-  IMAGE_NAME: registry.heroku.com/${{secrets.HEROKU_APP_NAME}}/web
+  # Despliegue Heroku
+  # HEROKU_API_KEY: ${{secrets.HEROKU_API_KEY}}
+  # IMAGE_NAME: registry.heroku.com/${{secrets.HEROKU_APP_NAME}}/web
+  # Despliegue AWS
+  APP_VERSION_LABEL: ${{secrets.AWS_EB_APP_NAME}}-${GITHUB_SHA}-${GITHUB_RUN_ATTEMPT}
 
 jobs:
   cd:
@@ -15,11 +18,27 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-      - name: Login heroku container
-        run: heroku container:login
-      - name: Build docker image
-        run: docker build -t ${{env.IMAGE_NAME}} .
-      - name: Deploy docker image
-        run: docker push ${{env.IMAGE_NAME}}
-      - name: Release
-        run: heroku container:release web -a ${{secrets.HEROKU_APP_NAME}}
+      # Despliegue Heroku
+      # - name: Login heroku container
+      #   run: heroku container:login
+      # - name: Build docker image
+      #   run: docker build -t ${{env.IMAGE_NAME}} .
+      # - name: Deploy docker image
+      #   run: docker push ${{env.IMAGE_NAME}}
+      # - name: Release
+      #   run: heroku container:release web -a ${{secrets.HEROKU_APP_NAME}}
+      #  Despliegue AWS
+      - name: AWS login
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{secrets.AWS_DEPLOY_ACCESS_KEY_ID}}
+          aws-secret-access-key: ${{secrets.AWS_DEPLOY_SECRET_ACCESS_KEY}}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Upload files to s3
+        run: |
+          zip -r ${{env.APP_VERSION_LABEL}}.zip * .dockerignore
+          aws s3 cp ${{env.APP_VERSION_LABEL}}.zip s3://${{secrets.AWS_DEPLOY_S3_BUCKET}}/${{env.APP_VERSION_LABEL}}.zip
+      - name: Update EB App version
+        run: aws elasticbeanstalk create-application-version --application-name ${{ secrets.AWS_EB_APP_NAME }} --version-label ${{ env.APP_VERSION_LABEL }} --source-bundle S3Bucket=${{ secrets.AWS_DEPLOY_S3_BUCKET }},S3Key=${{ env.APP_VERSION_LABEL }}.zip --no-auto-create-application
+      - name: Update environment
+        run: aws elasticbeanstalk update-environment --environment-name ${{ secrets.AWS_EB_ENV_NAME }} --version-label ${{ env.APP_VERSION_LABEL }}
